@@ -43,7 +43,7 @@ module.exports = {
 					return this.find(i => i.id === toGet);
 				};
 				server.iconURL = function(params) {
-					return `https://cdn.discordapp.com/icons/${this.id}/${this.icon}.${this.icon.startsWith("a_") && params.dynamic ? "gif" : (params.format || "png")}`;
+					return this.icon ? `https://cdn.discordapp.com/icons/${this.id}/${this.icon}.${this.icon.startsWith("a_") && params.dynamic ? "gif" : (params.format || "png")}` : "";
 				};
 				args = args.splice(1);
 				// eslint-disable-next-line no-empty
@@ -82,7 +82,7 @@ module.exports = {
 
 		async function showChannel (channel, server, title, fatal, append) {
 			let foundChannel = server.channels.cache.get(channel);
-			if (!foundChannel || !["text", 0].includes(foundChannel.type)) {
+			if (!foundChannel || !["text", 0, 5, "news"].includes(foundChannel.type)) {
 				return [`**${string(locale, title, {}, "error")}:** ${string(locale, "NONE_CONFIGURED")} ${append ? append : ""}`, true];
 			}
 			return [`**${string(locale, title, {}, "success")}:** <#${foundChannel.id}> (\`${foundChannel.id}\`)`];
@@ -94,7 +94,7 @@ module.exports = {
 			let foundChannels = [];
 			for await (let c of channelsToTest) {
 				let foundChannel = server.channels.cache.get(c);
-				if (foundChannel && ["text", 0].includes(foundChannel.type)) foundChannels.push(foundChannel);
+				if (foundChannel && ["text", "news", 0, 5].includes(foundChannel.type)) foundChannels.push(foundChannel);
 			}
 			return foundChannels.length > 0 ? [`**${string(locale, title, {}, "success")}:** ${foundChannels.map(c => `<#${c.id}> (\`${c.id}\`)`).join(", ")}`] : [`**${string(locale, title, {}, "error")}:** ${string(locale, "NONE_CONFIGURED")} ${append ? append : ""}`, true];
 		}
@@ -128,7 +128,7 @@ module.exports = {
 			let qServerDB = await server.db;
 
 			let channel = await findChannel(input, server.channels.cache);
-			if (!channel || channel.type !== "text") return string(locale, "CFG_INVALID_CHANNEL_ERROR", {}, "error");
+			if (!channel || !["text", "news", 0, 5].includes(channel.type)) return string(locale, "CFG_INVALID_CHANNEL_ERROR", {}, "error");
 			if (current_name === "disabled" && action === "add" && !force && qServerDB.config.channels.suggestions === channel.id) return "CONFIRM";
 			if (current_name === "disabled" && force) qServerDB.config.in_channel_suggestions = false;
 			let permissions = await channelPermissions(locale, check_perms, channel, server.client);
@@ -1309,7 +1309,47 @@ module.exports = {
 				}
 				}
 			}
-		}];
+		}/*, {
+				names: ["canned", "cannedreasons", "savedreasons", "cannedreason", "savedreason"],
+				name: "Saved Reasons",
+				description: "A list of custom reasons that can be inserted into approval/denial reasons",
+				examples: "`{{p}}config canned add invalid This suggestion is not valid.`\nAdds the canned response \`invalid\` which responds with \"This suggestion is not valid.\"\n\n`{{p}}config canned remove invalid`\nRemoves the \`invalid\` canned response\n\n`{{p}}config canned list`\nLists the configured canned responses",
+				docs: "",
+				cfg: async function() {
+					switch (args[1] || "") {
+						case "add":
+						case "+": {
+							let chInput = args.splice(2).join(" ").toLowerCase();
+							let output = await handleCommandsChannelInput(locale, chInput, server, "disabled", "disabled_chnl", [], "CFG_DISABLED_CHNL_ADD_SUCCESS", "add");
+							if (output === "CONFIRM") {
+								if ((
+									await confirmation(
+										message,
+										string(locale, "DISABLE_INCHANNEL_WARNING", { check: `<:${emoji.check}>`, x: `<:${emoji.x}>`}),
+										{
+											deleteAfterReaction: true
+										}
+									)
+								)) return message.channel.send((await handleCommandsChannelInput(locale, chInput, server, "disabled", "disabled_chnl", [], "CFG_DISABLED_CHNL_ADD_SUCCESS", "add", true)));
+								else return message.channel.send(string(locale, "CANCELLED", {}, "error"));
+							} else return message.channel.send(output);
+						}
+						case "remove":
+						case "-":
+						case "rm":
+						case "delete": {
+							return message.channel.send((await handleCommandsChannelInput(locale, args.splice(2).join(" ").toLowerCase(), server, "disabled", "disabled_chnl", [], "CFG_DISABLED_CHNL_REMOVED_SUCCESS", "remove")));
+						}
+						case "list": {
+							return message.channel.send((await showCommandsChannels(qServerDB.config.channels.disabled, "", server, "CONFIG_NAME:COMMANDSCHANNELS", false))[0]);
+						}
+						default: {
+							if (args[1]) return message.channel.send(string(locale, "CFG_INVALID_ROLE_PARAM_ERROR"));
+							else return message.channel.send((await showCommandsChannels(qServerDB.config.channels.disabled, "", server, "CONFIG_NAME:DISABLEDCHANNELS", false))[0]);
+						}
+					}
+				}
+			}*/];
 
 		switch (args[0] ? args[0].toLowerCase() : "help") {
 		case "help": {
@@ -1481,11 +1521,11 @@ module.exports = {
 			if (["--flags", "-flags"].some(e => e === args[args.length-1].toLowerCase()) && permission <= 1) {
 				const permissions = require("../../utils/permissions");
 				let hasPermissionList = [];
-				Object.keys(permissions).forEach(perm => {
+				if (server.me) Object.keys(permissions).forEach(perm => {
 					server.me.permissions.has(perm) ? hasPermissionList.push(string(locale, `PERMISSION:${perm}`)) : "";
 				});
 
-				embeds.push(new Discord.MessageEmbed().setTitle(string(locale, "CFG_INTERNAL_TITLE")).addField(string(locale, "CFG_PERMISSIONS_TITLE"), hasPermissionList.length > 0 ? hasPermissionList.join(", ") : "None").addField(string(locale, "CFG_FLAGS_TITLE"), qServerDB.flags.length > 0 ? qServerDB.flags.join(", ") : string(locale, "NO_FLAGS_SET")));
+				embeds.push(new Discord.MessageEmbed().setTitle(string(locale, "CFG_INTERNAL_TITLE")).addField(string(locale, "CFG_PERMISSIONS_TITLE"), hasPermissionList.length > 0 ? hasPermissionList.join(", ") : server.me ? "None" : "Permissions Not Findable").addField(string(locale, "CFG_FLAGS_TITLE"), qServerDB.flags.length > 0 ? qServerDB.flags.join(", ") : string(locale, "NO_FLAGS_SET")));
 			}
 
 			embeds.forEach(e => {

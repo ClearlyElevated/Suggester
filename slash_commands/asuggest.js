@@ -9,7 +9,6 @@ const { string } = require("../utils/strings");
 const humanizeDuration = require("humanize-duration");
 const { initTrello } = require("../utils/trello");
 module.exports = async function (interaction, client) {
-	console.log(interaction);
 	function respond(data) {
 		client.api.interactions(interaction.id, interaction.token).callback.post({data: {
 			type: 4,
@@ -21,8 +20,11 @@ module.exports = async function (interaction, client) {
 		});
 	}
 	let qUserDB = await dbQuery("User", { id: interaction.member.user.id });
+	let locale = qUserDB.locale || "en";
+	if (!interaction.guild_id) return respond(string(locale, "COMMAND_SERVER_ONLY", {}, "error"));
 	let qServerDB = await dbQuery("Server", { id: interaction.guild_id });
-	let locale = qUserDB.locale || (qServerDB ? qServerDB.config.locale : "") || "en";
+	locale = qUserDB.locale || (qServerDB ? qServerDB.config.locale : "") || "en";
+
 	if (!qServerDB) return respond(string(locale, "UNCONFIGURED_ERROR", {}, "error"));
 	const guildLocale = qServerDB.config.locale;
 
@@ -158,7 +160,7 @@ module.exports = async function (interaction, client) {
 			if (perms) return respond(perms);
 		} else return respond(string(locale, "NO_SUGGESTION_CHANNEL_ERROR", {}, "error"));
 
-		await new Suggestion({
+		let qSuggestionDB = await new Suggestion({
 			id: guild.id,
 			suggester: interaction.member.user.id,
 			suggestion,
@@ -170,7 +172,6 @@ module.exports = async function (interaction, client) {
 			anon: true
 		}).save();
 
-		let qSuggestionDB = await dbQuery("Suggestion", { suggestionId: id });
 		let embedSuggest = await suggestionEmbed(guildLocale, qSuggestionDB, qServerDB, client);
 		client.channels.cache.get(qServerDB.config.channels.suggestions)
 			.send(qServerDB.config.feed_ping_role ? (qServerDB.config.feed_ping_role === guild.id ? "@everyone" : `<@&${qServerDB.config.feed_ping_role}>`) : "", { embed: embedSuggest, disableMentions: "none" })
